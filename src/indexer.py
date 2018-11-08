@@ -3,6 +3,7 @@ from typing import *
 from nltk.corpus import stopwords
 from emoji import UNICODE_EMOJI
 from string import punctuation
+from nltk.tokenize import TweetTokenizer
 
 
 class TwitterIQ(dict):
@@ -41,11 +42,12 @@ class TwitterIQ(dict):
         self.all_postings = []
         self.tweet_content_dict = {}
         self.__current_tweet_id = None
+        self.tokenizer = TweetTokenizer()
 
         with open(path, 'r') as corpus:
             # combs through each doc/tweet individually
             for doc in corpus:
-                tokenized_doc = doc.split()      # tokens by white space 
+                tokenized_doc = self.tokenizer(doc)
                 tweet_id = tokenized_doc[3]
                 tweet_content = tokenized_doc[5:] # what the user wrote
                 # stores the tokenized content in a dict identified by the tweet_id
