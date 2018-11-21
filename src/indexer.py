@@ -30,7 +30,8 @@ class TwitterIQ(dict):
             to propery organize the dictionary
     """
 
-    STOP_WORDS = (stopwords.words('english') + stopwords.words('german'))
+    STOP_WORDS = stopwords.words('english') + stopwords.words('german')
+    EXCLUSION_LIST = list(punctuation) + list(UNICODE_EMOJI.keys()) + ['...', 'de', 'com']
 
     def __init__(self, path: str, strip_handles=True):
         """
@@ -49,7 +50,7 @@ class TwitterIQ(dict):
             for doc in corpus:
                 tokenized_doc = self.tokenizer.tokenize(doc)
                 tweet_id = tokenized_doc[6]
-                tweet_content = tokenized_doc[8:] # what the user wrote
+                tweet_content = self.__find_start_of_content(tokenized_doc[7:]) # what the user wrote
                 # stores the tokenized content in a dict identified by the tweet_id
                 self.tweet_content_dict[tweet_id] = tweet_content
                 self.__current_tweet_id = tweet_id
@@ -102,16 +103,13 @@ class TwitterIQ(dict):
         :return: The token if it can be cleaned, None if not
         :rtype: str
         """
-       
-        if token in punctuation:
-            return
-        
-        if token in UNICODE_EMOJI:
-            return 
 
-        if token.startswith('@'):
+        if token in TwitterIQ.EXCLUSION_LIST or token.startswith(('@', 'http')):
             return
-        
+       
+        if token.startswith('#'):
+            token = token[1:]
+
         token = token.lower()
 
         if token in TwitterIQ.STOP_WORDS:
@@ -137,7 +135,7 @@ class TwitterIQ(dict):
         :return: the most frequently used words in the corpus
         :rtype: list
         """
-        return heapq.nlargest(limit, self, key=self.get)
+        return heapq.nlargest(limit, self, key=lambda x: self[x])
 
     def query(self, term1: str, term2: str = None) -> List[int]:
         """
@@ -163,6 +161,15 @@ class TwitterIQ(dict):
         for tweet_id in self.query(term1, term2):
             print(f'{tweet_id}:', ' '.join(
                 self.tweet_content_dict[tweet_id]))
+
+    @staticmethod
+    def __find_start_of_content(tokens):
+        for i in range(len(tokens)):
+            token = tokens[i]
+            if not token.startswith('@'):
+               break 
+
+        return tokens[i + 3:]
                     
 class PostingNode(object):
     """
