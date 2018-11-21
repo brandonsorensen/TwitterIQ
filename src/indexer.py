@@ -32,7 +32,7 @@ class TwitterIQ(dict):
 
     STOP_WORDS = (stopwords.words('english') + stopwords.words('german'))
 
-    def __init__(self, path: str):
+    def __init__(self, path: str, strip_handles=True):
         """
         Initializes by walking through each token and creating an
         inverted index as detailed above.
@@ -42,14 +42,14 @@ class TwitterIQ(dict):
         self.all_postings = []
         self.tweet_content_dict = {}
         self.__current_tweet_id = None
-        self.tokenizer = TweetTokenizer()
+        self.tokenizer = TweetTokenizer(strip_handles=strip_handles)
 
         with open(path, 'r') as corpus:
             # combs through each doc/tweet individually
             for doc in corpus:
-                tokenized_doc = self.tokenizer(doc)
-                tweet_id = tokenized_doc[3]
-                tweet_content = tokenized_doc[5:] # what the user wrote
+                tokenized_doc = self.tokenizer.tokenize(doc)
+                tweet_id = tokenized_doc[6]
+                tweet_content = tokenized_doc[8:] # what the user wrote
                 # stores the tokenized content in a dict identified by the tweet_id
                 self.tweet_content_dict[tweet_id] = tweet_content
                 self.__current_tweet_id = tweet_id
@@ -82,11 +82,12 @@ class TwitterIQ(dict):
         """
         tweet_id = self.__current_tweet_id
         for token in tweet_content:
-            if not self.__clean(token):
+            token = self.__clean(token)
+            if not token:
                 return
             
             # creates entry or assigns posting_node to existing one
-            posting_node = self[token]
+            posting_node = self[self.__clean(token)]
             if tweet_id not in posting_node.postings_list:
                 # adds to end of posting list and increments freq
                 posting_node.postings_list.append(tweet_id)
@@ -107,6 +108,9 @@ class TwitterIQ(dict):
         
         if token in UNICODE_EMOJI:
             return 
+
+        if token.startswith('@'):
+            return
         
         token = token.lower()
 
