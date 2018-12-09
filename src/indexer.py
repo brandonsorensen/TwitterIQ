@@ -33,7 +33,7 @@ class TwitterIQ(dict):
 	STOP_WORDS = stopwords.words('english') + stopwords.words('german')
 	EXCLUSION_LIST = list(punctuation) + list(UNICODE_EMOJI.keys()) + ['...', 'de', 'com']
 
-	def __init__(self, path: str, strip_handles=True, **kwargs):
+	def __init__(self, path: str = None, strip_handles=True, **kwargs):
 		"""
 		Initializes by walking through each token and creating an
 		inverted index as detailed above.
@@ -44,21 +44,11 @@ class TwitterIQ(dict):
 		self.all_postings = []
 		self.tweet_content_dict = {}
 		self.tokenizer = TweetTokenizer(strip_handles=strip_handles)
-		self.__indexing = True
+		self.__indexing = False
 		self.length = 0
 
-		with open(path, 'r') as corpus:
-			# combs through each doc/tweet individually
-
-			for doc in corpus:
-				raw_tweet = doc.split('\t')[4]
-				self.tweet_content_dict[self.length] = raw_tweet
-				tokenized_doc = self.tokenizer.tokenize(raw_tweet)
-
-				self.__index_tokens(tokenized_doc)
-				self.length += 1
-
-		self.__indexing = False
+		if path:
+			self.index(path)
 
 	def __missing__(self, token: str):
 		"""
@@ -131,15 +121,31 @@ class TwitterIQ(dict):
 		"""
 		return self.tweet_content_dict[tweet_id]
 
-	def get_most_freq_words(self, limit: int = 10) -> List[str]:
+	def get_most_freq_words(self, n: int = 10) -> List[str]:
 		"""
 		Returns the words with the three largest frequencies.
 
-		:param int limit: the optional n number of words to return
+		:param int n: the optional n number of words to return
 		:return: the most frequently used words in the corpus
 		:rtype: list
 		"""
-		return heapq.nlargest(limit, self, key=lambda x: self[x])
+		return heapq.nlargest(n, self, key=lambda x: self[x])
+
+	def index(self, path: str) -> None:
+		self.__indexing = True
+
+		with open(path, 'r') as corpus:
+			# combs through each doc/tweet individually
+
+			for doc in corpus:
+				raw_tweet = doc.split('\t')[4]
+				self.tweet_content_dict[self.length] = raw_tweet
+				tokenized_doc = self.tokenizer.tokenize(raw_tweet)
+
+				self.__index_tokens(tokenized_doc)
+				self.length += 1
+
+		self.__indexing = False
 
 	def query(self, term1: str, term2: str = None) -> List[int]:
 		"""
