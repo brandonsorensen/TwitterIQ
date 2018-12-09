@@ -169,8 +169,7 @@ class TwitterIQ(dict):
 		:param str term2: the optional second term to intersect with
 		"""
 		for tweet_id in self.query(term1, term2):
-			print(f'{tweet_id}:', ' '.join(
-				self.tweet_content_dict[tweet_id]))
+			print(f'{tweet_id}:', self.tweet_content_dict[tweet_id])
 
 	def __len__(self):
 		return self.length
