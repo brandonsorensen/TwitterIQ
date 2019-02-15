@@ -6,7 +6,7 @@ from string import punctuation
 from nltk.tokenize import TweetTokenizer
 
 
-class TwitterIQ(dict):
+class InvertedIndex(dict):
 	"""
 	This class creates an inverted index of a .csv file
 	that contains information and content from a number of tweets.
@@ -33,7 +33,7 @@ class TwitterIQ(dict):
 	STOP_WORDS = stopwords.words('english') + stopwords.words('german')
 	EXCLUSION_LIST = list(punctuation) + list(UNICODE_EMOJI.keys()) + ['...', 'de', 'com']
 
-	def __init__(self, path: str = None, strip_handles=True, **kwargs):
+	def __init__(self, path: str = None, strip_handles: bool = True, **kwargs):
 		"""
 		Initializes by walking through each token and creating an
 		inverted index as detailed above.
@@ -63,7 +63,7 @@ class TwitterIQ(dict):
 			self[token] = PostingNode(self.all_postings[-1])
 			return self[token]
 		else:
-			return PostingNode([], 0)
+			return PostingNode([])
 
 	def __index_tokens(self, tweet_content: list) -> None:
 		"""
@@ -98,7 +98,7 @@ class TwitterIQ(dict):
 		:rtype: str
 		"""
 
-		if token in TwitterIQ.EXCLUSION_LIST or token.startswith(('http')):
+		if token in InvertedIndex.EXCLUSION_LIST or token.startswith(('http')):
 			return
 
 		if token.startswith('#'):
@@ -106,7 +106,7 @@ class TwitterIQ(dict):
 
 		token = token.lower()
 
-		if token in TwitterIQ.STOP_WORDS:
+		if token in InvertedIndex.STOP_WORDS:
 			return
 
 		return token
@@ -181,16 +181,14 @@ class PostingNode(object):
 	length of that posting list, or the word's frequency
 	"""
 
-	def __init__(self, postings_list: list, freq: int = 1):
+	def __init__(self, postings_list: list):
 		self.postings_list = postings_list
-		self.freq = freq
+		self.freq = len(postings_list)
 
 	def __str__(self) -> str:
 		ret = f'(Frequency: {self.freq}, {self.postings_list[:5]}'
-
 		if self.freq > 5:
 			ret += '...'
-
 		ret += ')'
 
 		return ret
