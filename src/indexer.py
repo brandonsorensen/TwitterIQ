@@ -17,17 +17,9 @@ class InvertedIndex(dict):
 	postings list.
 
 	Query methods are detailed in their respective methods' docstrings.
-
-	Attributes:
-			all_postings: List containing ALL postings lists
-			tweet_content_dict: Dictionary whose keys are twitter_ids
-					pointing to the content of the tokenized tweets.
-			__current_tweet_id: ID of the doc/tweet that is currently
-					being iterated over. This is used by the __missing__ method
-					to propery organize the dictionary
 	"""
 
-	def __init__(self, database, ids=None, exclude=None, numeric_ids=True):
+	def __init__(self, database, ids=None, exclude=(), numeric_ids=True):
 		"""
 		Initializes by walking through each token and creating an
 		inverted index as detailed above.
@@ -38,7 +30,7 @@ class InvertedIndex(dict):
 		self.database = database
 
 		if ids is None:
-			self.ids = np.ndarray(range(len(database)), dtype=np.int32)
+			self.ids = np.array(range(len(database)), dtype=np.int32)
 		else:
 			if len(ids) != len(database):
 				raise IndexError(f'The length of `ids` ({len(ids)}) does not match'
@@ -49,9 +41,7 @@ class InvertedIndex(dict):
 
 		self.PostingsList = NumericPostingsList if numeric_ids else PostingsList
 		self.__indexing = False
-		self._index(database)
-		for token in exclude:
-			del self[token]
+		self._index(database, set(exclude))
 		self.vocab = self.keys()
 
 	def __missing__(self, token: str):
@@ -68,14 +58,7 @@ class InvertedIndex(dict):
 		else:
 			return set()
 
-	@property
-	def original_index(self):
-		if issubclass(type(self.database), dict):
-			return set(self.database.keys())
-		else:
-			return range(len(self.database))
-
-	def __index_tokens(self, doc: list) -> None:
+	def __index_tokens(self, doc: list, exclude: list) -> None:
 		"""
 		Walks the the list of tokens from each tweet. If a token
 		is not clean, it exits without adding an entry. It then
@@ -88,6 +71,8 @@ class InvertedIndex(dict):
 		"""
 		for token in doc:
 			# creates entry or assigns posting_node to existing one
+			if token in exclude:
+				continue
 			postings_list = self[token]
 			if self.__curent_doc not in postings_list:
 				# adds to end of posting list
@@ -103,7 +88,7 @@ class InvertedIndex(dict):
 		"""
 		return heapq.nlargest(n, self, key=lambda x: self[x])
 
-	def _index(self, database, ids=None) -> None:
+	def _index(self, database, exclude, ids=None) -> None:
 		if ids is None:
 			if self.PostingsList is PostingsList:
 				raise ValueError('Index is not numeric and no IDs are provided.')
@@ -114,7 +99,7 @@ class InvertedIndex(dict):
 
 		for doc_id, doc in zip(ids, database):
 			self.__curent_doc = doc_id
-			self.__index_tokens(doc)
+			self.__index_tokens(doc, exclude)
 
 		if self.PostingsList is NumericPostingsList:
 			for postings_list in self.values():
@@ -171,7 +156,7 @@ class PostingsList(object):
 		self.add(posting)
 
 	def __add__(self, other):
-		if type(other) in [list, np.ndarray]:
+		if type(other) in [list, np.array]:
 			self.update(other)
 
 		else:
@@ -189,13 +174,20 @@ class PostingsList(object):
 	def __getitem__(self, i):
 		return self.postings[i]
 
+	def __gt__(self, other):
+		assert issubclass(type(other), PostingsList)
+		return len(self.postings) > len(other.postings)
+
 
 class NumericPostingsList(PostingsList):
 
-	def __init__(self, postings, capacity=30, dtype=np.int32, expansion_rate=2):
+	def __init__(self, postings, capacity=10, dtype=np.int32, expansion_rate=2):
 		super().__init__(postings)
 		self.size = len(self.postings)
 		self.first = postings[0] if self.size else None
+		self.dtype = dtype
+		assert issubclass(self.dtype, np.number)
+		self.expansion_rate = expansion_rate
 
 		if self.size > capacity:
 			self.postings = np.array(list(self.compress(self.postings)),
@@ -203,22 +195,21 @@ class NumericPostingsList(PostingsList):
 			self.capacity = self.size
 		else:
 			self.capacity = capacity
-			self.postings = np.empty((capacity,))
-			self.update(self.postings)
-
-		self.expansion_rate = expansion_rate
+			self.postings = np.empty((capacity,), dtype=dtype)
+			self.update(postings)
 
 	def add(self, posting):
-		if type(posting) is not int or issubclass(type(posting), np.integer):
-			raise TypeError('Posting must be of type int.')
-
+		posting_ = self.dtype(posting)
 		if self.size == 0:
-			self.first = posting
+			self.first = posting_
 
 		if self.size == self.capacity:
 			self._extend_array()
 
-		self.postings[self.size] = posting - self.first
+		compressed = posting_ - self.first
+		if self.postings[self.size - 1] == compressed:
+			return
+		self.postings[self.size] = compressed
 		self.size += 1
 
 	def _extend_array(self):
@@ -243,7 +234,7 @@ class NumericPostingsList(PostingsList):
 			if not i:
 				yield self.first
 			else:
-				yield num_array[i] + self.first
+				yield int(num_array[i] + self.first)
 
 	def __str__(self):
-		return str(list(self.decompress(self.postings)))
+		return str(list(self.decompress(self.postings[:self.size])))
