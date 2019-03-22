@@ -41,7 +41,7 @@ class InvertedIndex(dict):
 
 		self.PostingsList = NumericPostingsList if numeric_ids else PostingsList
 		self.__indexing = False
-		self._index(database, set(exclude))
+		self.index(database, set(exclude), ids=ids)
 		self.vocab = self.keys()
 
 	def __missing__(self, token: str):
@@ -74,9 +74,7 @@ class InvertedIndex(dict):
 			if token in exclude:
 				continue
 			postings_list = self[token]
-			if self.__curent_doc not in postings_list:
-				# adds to end of posting list
-				postings_list.add(self.__curent_doc)
+			postings_list.add(self.__curent_doc)
 
 	def get_most_freq_words(self, n: int = 10) -> List[str]:
 		"""
@@ -88,7 +86,7 @@ class InvertedIndex(dict):
 		"""
 		return heapq.nlargest(n, self, key=lambda x: self[x])
 
-	def _index(self, database, exclude, ids=None) -> None:
+	def index(self, database, exclude, ids=None, show_progress=0) -> None:
 		if ids is None:
 			if self.PostingsList is PostingsList:
 				raise ValueError('Index is not numeric and no IDs are provided.')
@@ -97,9 +95,14 @@ class InvertedIndex(dict):
 
 		self.__indexing = True
 
+		current_index = 0
 		for doc_id, doc in zip(ids, database):
+			if show_progress and not current_index % show_progress:
+				print(current_index)
+
 			self.__curent_doc = doc_id
 			self.__index_tokens(doc, exclude)
+			current_index += 1
 
 		if self.PostingsList is NumericPostingsList:
 			for postings_list in self.values():
@@ -140,7 +143,7 @@ class InvertedIndex(dict):
 class PostingsList(object):
 
 	def __init__(self, postings):
-		self.postings = postings
+		self.postings = set(postings)
 
 	def add(self, posting):
 		self.postings.add(posting)
@@ -166,13 +169,13 @@ class PostingsList(object):
 		return len(self.postings)
 
 	def __str__(self):
-		return str(self.postings)
+		return str(sorted(list(self.postings)))
 
 	def __repr__(self):
 		return f'PostingsList({str(self)})'
 
 	def __getitem__(self, i):
-		return self.postings[i]
+		return i in self.postings
 
 	def __gt__(self, other):
 		assert issubclass(type(other), PostingsList)
@@ -182,6 +185,7 @@ class PostingsList(object):
 class NumericPostingsList(PostingsList):
 
 	def __init__(self, postings, capacity=10, dtype=np.int32, expansion_rate=2):
+		# TODO: This doesn't need to inherit from the PostingsList class.
 		super().__init__(postings)
 		self.size = len(self.postings)
 		self.first = postings[0] if self.size else None
@@ -238,3 +242,9 @@ class NumericPostingsList(PostingsList):
 
 	def __str__(self):
 		return str(list(self.decompress(self.postings[:self.size])))
+
+	def __repr__(self):
+		return f'PostingsList({str(self)})'
+
+	def __getitem__(self, item):
+		return self.postings[item]
