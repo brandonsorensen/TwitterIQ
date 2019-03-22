@@ -15,8 +15,8 @@ class InvertedIndex(dict):
 	is set to False. This class cannot be initialized to empty.
 	"""
 
-	def __init__(self, database: list, ids: list = None, exclude: list = (),
-	             numeric_ids: bool = True):
+	def __init__(self, database: list = (), ids: list = None,
+	             exclude: list = (), numeric_ids: bool = True):
 		"""
 		:param list-like database: a collection of elements to be indexed
 		:param list-like ids: a collection of unique identifiers
@@ -25,16 +25,10 @@ class InvertedIndex(dict):
 		"""
 		super().__init__()
 		self.database = database
-
-		if ids is None:
-			self.ids = np.arange(len(database), dtype=np.int32)
-		else:
-			self.database = database
-			self._check_ids(ids, numeric_ids)
-
+		self.ids = ids
 		self.PostingsList = NumericPostingsList if numeric_ids else PostingsList
 		self.__indexing = False
-		self.index(database, set(exclude), ids=ids)
+		self.index(database, exclude, ids=ids)
 
 	def __missing__(self, token: str):
 		"""
@@ -50,20 +44,20 @@ class InvertedIndex(dict):
 		else:
 			return set()
 
-	def _index_tokens(self, doc: list, exclude: list) -> None:
+	def _index_tokens(self, doc_body: list, doc_id: int, exclude: set) -> None:
 		"""
-		:param list-like doc: a list of tokens from tweet
+		:param list-like doc_body: a list of tokens from tweet
 		:param list-like exclude: a list of
 		:returns: None
 		"""
-		for token in doc:
+		for token in doc_body:
 			# creates entry or assigns posting_node to existing one
 			if token in exclude:
 				continue
 			postings_list = self[token]
-			postings_list.add(self.__curent_doc)
+			postings_list.add(doc_id)
 
-	def get_most_freq_words(self, n: int = 10) -> List[str]:
+	def n_most_common(self, n: int = 10) -> List[Generic]:
 		"""
 		Returns the words with the three largest frequencies.
 
@@ -78,24 +72,27 @@ class InvertedIndex(dict):
 			if self.PostingsList is PostingsList:
 				raise ValueError('Index is not numeric and no IDs are provided.')
 
-			ids = range(len(self), len(self) + len(database))
+			new_id_array = np.arange(len(self) + len(database), dtype=np.int32)
+			new_id_array[:len(self)] = self.ids
+			self.ids = new_id_array
+		else:
+			self._check_ids(ids, self.PostingsList is NumericPostingsList)
 
+		exclude = set(exclude)
 		self.__indexing = True
 
 		current_index = 0
-		for doc_id, doc in zip(ids, database):
+		for doc, doc_id in zip(database, ids):
 			if show_progress and not current_index % show_progress:
-				print(current_index)
+				print(f'Current index: {current_index}, {current_index/len(database)}%')
 
-			self.__curent_doc = doc_id
-			self._index_tokens(doc, exclude)
+			self._index_tokens(doc, doc_id, exclude)
 			current_index += 1
 
 		if self.PostingsList is NumericPostingsList:
 			for postings_list in self.values():
 				postings_list.finalize()
 
-		self.__current_doc = None
 		self.__indexing = False
 
 	def token_count(self):
