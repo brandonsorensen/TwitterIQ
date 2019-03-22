@@ -16,33 +16,39 @@ class InvertedIndex(dict):
 	"""
 
 	def __init__(self, database: list = (), ids: list = None,
-	             exclude: list = (), numeric_ids: bool = True):
+	             exclude: list = (), numeric_ids: bool = True,
+	             keep_db: bool = False, keep_ids: bool = False):
 		"""
 		:param list-like database: a collection of elements to be indexed
 		:param list-like ids: a collection of unique identifiers
 		:param list-like exclude: a collection of elements to be excluded from index
 		:param bool numeric_ids: whether all IDs are numeric.
+		:param bool keep_db: whether to store the database as an instance variable or
+							 free it from memory after indexing
+		:param bool keep_ids: whether to store the IDs as an instance variable or
+							  free it from memory after indexing
 		"""
 		super().__init__()
-		self.database = database
-		self.ids = ids
+		if keep_db: self.database = database
+		if keep_ids: self.ids = ids
 		self.PostingsList = NumericPostingsList if numeric_ids else PostingsList
 		self.__indexing = False
-		self.index(database, exclude, ids=ids)
+		self.__current_doc = None
+		self.index(database, ids=ids, exclude=exclude)
 
-	def __missing__(self, token: str):
+	def __missing__(self, item: str):
 		"""
 		If entry is missing, add posting to all_postings, then creates
 		a PostingNode and sets the entry to equal that value.
 
-		:param str token: The token to be added to the dictionary
+		:param str item: The token to be added to the dictionary
 		:return: posting
 		"""
 		if self.__indexing:
-			self[token] = self.PostingsList([self.__curent_doc])
-			return self[token]
+			self[item] = self.PostingsList([self.__current_doc])
+			return self[item]
 		else:
-			return set()
+			return []
 
 	def _index_tokens(self, doc_body: list, doc_id: int, exclude: set) -> None:
 		"""
@@ -54,10 +60,11 @@ class InvertedIndex(dict):
 			# creates entry or assigns posting_node to existing one
 			if token in exclude:
 				continue
+			self.__current_doc = doc_id
 			postings_list = self[token]
 			postings_list.add(doc_id)
 
-	def n_most_common(self, n: int = 10) -> List[Generic]:
+	def n_most_common(self, n: int = 10) -> List[str]:
 		"""
 		Returns the words with the three largest frequencies.
 
@@ -67,16 +74,14 @@ class InvertedIndex(dict):
 		"""
 		return heapq.nlargest(n, self, key=lambda x: self[x])
 
-	def index(self, database, exclude, ids=None, show_progress=0) -> None:
+	def index(self, database, ids=None, exclude=(), show_progress=0) -> None:
 		if ids is None:
 			if self.PostingsList is PostingsList:
 				raise ValueError('Index is not numeric and no IDs are provided.')
 
-			new_id_array = np.arange(len(self) + len(database), dtype=np.int32)
-			new_id_array[:len(self)] = self.ids
-			self.ids = new_id_array
+			ids = range(len(self), len(self) + len(database))
 		else:
-			self._check_ids(ids, self.PostingsList is NumericPostingsList)
+			ids = self._check_ids(ids, database, self.PostingsList is NumericPostingsList)
 
 		exclude = set(exclude)
 		self.__indexing = True
@@ -84,7 +89,7 @@ class InvertedIndex(dict):
 		current_index = 0
 		for doc, doc_id in zip(database, ids):
 			if show_progress and not current_index % show_progress:
-				print(f'Current index: {current_index}, {current_index/len(database)}%')
+				print(f'Current index: {doc_id}, {current_index/len(database)}%')
 
 			self._index_tokens(doc, doc_id, exclude)
 			current_index += 1
@@ -93,10 +98,26 @@ class InvertedIndex(dict):
 			for postings_list in self.values():
 				postings_list.finalize()
 
+		try:
+			del self.__current_doc
+		except NameError:
+			pass
+
 		self.__indexing = False
 
 	def token_count(self):
 		return sum(map(len, self.values()))
+
+	def collect_ids(self):
+		try:
+			return self.ids
+		except AttributeError:
+			pass
+
+		all_ids = set()
+		for postings_list in self.values():
+			all_ids.update(postings_list)
+		return sorted(all_ids)
 
 	def query(self, term1: str, term2: str = None) -> List[int]:
 		"""
@@ -108,7 +129,7 @@ class InvertedIndex(dict):
 		:return: the positings list or intersection of two
 		"""
 		if term2 is None:
-			return self[term1].postings_list
+			return self[term1]
 		else:
 			return list(set(self.query(term1)) & set(self.query(term2)))
 
@@ -123,21 +144,23 @@ class InvertedIndex(dict):
 		for tweet_id in self.query(term1, term2):
 			print(f'{tweet_id}:', self.tweet_content_dict[tweet_id])
 
-	def _check_ids(self, ids, ensure_numeric):
+	def _check_ids(self, ids, database, ensure_numeric):
 		"""
 		Ensures that a provided list of IDs 1) is the same shape as its accompanying
 		dataset, 2) contains no duplicate elements, and 3) contingent upon the boolean
 		value of `ensure_numeric, converts all elements to NumPy integers.
 
 		:param list-like ids: a list of idientifiers
+		:param list-like database: a list of documents
 		:param bool ensure_numeric: whether to force index to consist of numbers
 		:return: list-like container of IDs
 		"""
-		if len(ids) != len(self.database):
+		if len(ids) != len(database):
 			raise IndexError(f'The length of `ids` ({len(ids)}) does not match'
-			                 f'the length of the document collection ({len(self.database)}).')
+			                 f'the length of the document collection ({len(database)}).')
 
-		if len(ids) != len(set(ids)): # Ensures that IDs are unique
+		# Ensures that IDs are unique
+		if len(ids) != len(set(ids)) or len(ids & self.collect_ids()):
 			raise IndexError('`ids` does not consist of unique elements.')
 
 		if ensure_numeric:
@@ -149,9 +172,9 @@ class InvertedIndex(dict):
 					raise IndexError(f'{id_} cannot be converted to numeric. '
 					                 f'Should be {int_id}')
 				numeric_ids[i] = int_id
-			self.ids = numeric_ids
+			return numeric_ids
 		else:
-			self.ids = ids
+			return ids
 
 
 class PostingsList(object):
