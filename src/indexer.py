@@ -133,17 +133,6 @@ class InvertedIndex(dict):
 		else:
 			return list(set(self.query(term1)) & set(self.query(term2)))
 
-	def print_query(self, term1: str, term2: str = None) -> None:
-		# FIXME
-		"""
-		Pretty prints the query method.
-
-		:param str term1: the first term to query
-		:param str term2: the optional second term to intersect with
-		"""
-		for tweet_id in self.query(term1, term2):
-			print(f'{tweet_id}:', self.tweet_content_dict[tweet_id])
-
 	def _check_ids(self, ids, database, ensure_numeric):
 		"""
 		Ensures that a provided list of IDs 1) is the same shape as its accompanying
@@ -281,7 +270,7 @@ class NumericPostingsList(PostingsList):
 		return str(list(self.decompress(self.postings[:self.size])))
 
 	def __repr__(self):
-		return f'PostingsList({str(self)})'
+		return f'NumericPostingsList({str(self)})'
 
 	def __getitem__(self, item):
 		return self.postings[item]
