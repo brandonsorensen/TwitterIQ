@@ -5,44 +5,36 @@ from typing import *
 
 class InvertedIndex(dict):
 	"""
-	This class creates an inverted index of a .csv file
-	that contains information and content from a number of tweets.
-
-	This class inherits from the default dictionary class in Python.
-	This was done primarily to utilize the __missing__ function,
-	which serves to make the code a bit more Pythonic. The class loads
-	each token individually and uses the __missing__ method to determine
-	whether it is already in the dictionary (self). In the case the it
-	is, the id of the particular tweet/doc is added to the relevant
-	postings list.
-
-	Query methods are detailed in their respective methods' docstrings.
+	Takes a collection of documents and creates an inverted index in which
+	each element of the document, such as a token, is stored as a key in a dictionary
+	with a list of identifies for the documents in which it appears serving as the
+	value. Any  list of arbitrary document identifiers can be supplied in the `ids`
+	argument. If no identifiers are provided, the class defaults to using a standard
+	zero-indexed numeric index of the length of the provided database. Ensure that if
+	custom `ids` are supplied which are non-numerical that the `numeric_ids` parameter
+	is set to False. This class cannot be initialized to empty.
 	"""
 
-	def __init__(self, database, ids=None, exclude=(), numeric_ids=True):
+	def __init__(self, database: list, ids: list = None, exclude: list = (),
+	             numeric_ids: bool = True):
 		"""
-		Initializes by walking through each token and creating an
-		inverted index as detailed above.
-
-		:param str path: the path to the string
+		:param list-like database: a collection of elements to be indexed
+		:param list-like ids: a collection of unique identifiers
+		:param list-like exclude: a collection of elements to be excluded from index
+		:param bool numeric_ids: whether all IDs are numeric.
 		"""
 		super().__init__()
 		self.database = database
 
 		if ids is None:
-			self.ids = np.array(range(len(database)), dtype=np.int32)
+			self.ids = np.arange(len(database), dtype=np.int32)
 		else:
-			if len(ids) != len(database):
-				raise IndexError(f'The length of `ids` ({len(ids)}) does not match'
-				                 f'the length of the document collection ({len(database)}).')
-
 			self.database = database
-			self.ids = ids
+			self._check_ids(ids, numeric_ids)
 
 		self.PostingsList = NumericPostingsList if numeric_ids else PostingsList
 		self.__indexing = False
 		self.index(database, set(exclude), ids=ids)
-		self.vocab = self.keys()
 
 	def __missing__(self, token: str):
 		"""
@@ -58,15 +50,10 @@ class InvertedIndex(dict):
 		else:
 			return set()
 
-	def __index_tokens(self, doc: list, exclude: list) -> None:
+	def _index_tokens(self, doc: list, exclude: list) -> None:
 		"""
-		Walks the the list of tokens from each tweet. If a token
-		is not clean, it exits without adding an entry. It then
-		adds to (or uses the __missing__ method to create) the
-		dictionary (self) entry for each token. It then adds to the
-		posting list of each token.
-
-		:param list tweet_content: a list of tokens from tweet
+		:param list-like doc: a list of tokens from tweet
+		:param list-like exclude: a list of
 		:returns: None
 		"""
 		for token in doc:
@@ -101,7 +88,7 @@ class InvertedIndex(dict):
 				print(current_index)
 
 			self.__curent_doc = doc_id
-			self.__index_tokens(doc, exclude)
+			self._index_tokens(doc, exclude)
 			current_index += 1
 
 		if self.PostingsList is NumericPostingsList:
@@ -138,6 +125,36 @@ class InvertedIndex(dict):
 		"""
 		for tweet_id in self.query(term1, term2):
 			print(f'{tweet_id}:', self.tweet_content_dict[tweet_id])
+
+	def _check_ids(self, ids, ensure_numeric):
+		"""
+		Ensures that a provided list of IDs 1) is the same shape as its accompanying
+		dataset, 2) contains no duplicate elements, and 3) contingent upon the boolean
+		value of `ensure_numeric, converts all elements to NumPy integers.
+
+		:param list-like ids: a list of idientifiers
+		:param bool ensure_numeric: whether to force index to consist of numbers
+		:return: list-like container of IDs
+		"""
+		if len(ids) != len(self.database):
+			raise IndexError(f'The length of `ids` ({len(ids)}) does not match'
+			                 f'the length of the document collection ({len(self.database)}).')
+
+		if len(ids) != len(set(ids)): # Ensures that IDs are unique
+			raise IndexError('`ids` does not consist of unique elements.')
+
+		if ensure_numeric:
+			numeric_ids = np.empty((len(ids),), dtype=np.int32)
+			for i in range(len(ids)):
+				id_ = ids[i]
+				int_id = np.int32(id_)
+				if int_id != id_:
+					raise IndexError(f'{id_} cannot be converted to numeric. '
+					                 f'Should be {int_id}')
+				numeric_ids[i] = int_id
+			self.ids = numeric_ids
+		else:
+			self.ids = ids
 
 
 class PostingsList(object):
