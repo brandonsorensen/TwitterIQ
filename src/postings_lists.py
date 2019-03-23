@@ -1,5 +1,9 @@
-class PostingsList(object):
+import numpy as np
 
+
+class CustomPostingsList(object):
+
+	# TODO: Enforce uniform type
 	def __init__(self, postings):
 		self.postings = set(postings)
 
@@ -36,24 +40,39 @@ class PostingsList(object):
 		return i in self.postings
 
 	def __gt__(self, other):
-		assert issubclass(type(other), PostingsList)
+		assert issubclass(type(other), CustomPostingsList)
 		return len(self.postings) > len(other.postings)
 
 
-class NumericPostingsList(PostingsList):
+class NumericPostingsList(CustomPostingsList):
+	"""
+	A postings list that consists only of numbers. The postings are stored
+	in 1-dimensional NumPy arrays not as their real values but as the difference
+	between the value and the value directly before it. When the contents of the
+	postings list are printed, they are then converted back to their real values.
+	"""
 
-	def __init__(self, postings, capacity=10, dtype=np.uint32, expansion_rate=2):
-		# TODO: This doesn't need to inherit from the PostingsList class.
+	def __init__(self, postings: list, capacity: int = 10, dtype: type = np.uint32,
+	             expansion_rate: float = 2.0):
+		"""
+		Creates a postings list consisting only of numeric values and then compresses
+		them to the difference between each consecutive value.
+
+		:param list postings: a list of postings
+		:param int capacity: the initial capacity of the underlying array, default 10
+		:param type dtype: the data type of the array
+		:param float expansion_rate: the rate at which the underlying array grows
+			   when its capacity is met.
+		"""
 		super().__init__(postings)
-		self.size = len(self.postings)
-		self.first = postings[0] if self.size else None
+		self.size = len(postings)
+		self.highest = postings[-1] if self.size else None
+		assert issubclass(dtype, np.unsignedinteger)
 		self.dtype = dtype
-		assert issubclass(self.dtype, np.number)
 		self.expansion_rate = expansion_rate
 
 		if self.size > capacity:
-			self.postings = np.array(list(self.compress(self.postings)),
-			                         dtype=dtype)
+			self.postings = np.array(list(self.compress(postings)), dtype=dtype)
 			self.capacity = self.size
 		else:
 			self.capacity = capacity
@@ -62,41 +81,51 @@ class NumericPostingsList(PostingsList):
 
 	def add(self, posting):
 		posting_ = self.dtype(posting)
-		if self.size == 0:
-			self.first = posting_
 
 		if self.size == self.capacity:
 			self._extend_array()
 
-		compressed = posting_ - self.first
-		if self.postings[self.size - 1] == compressed:
+		if self.highest == posting_:
 			return
-		self.postings[self.size] = compressed
+		self.postings[self.size] = posting_
+		self.highest = posting_
 		self.size += 1
 
 	def _extend_array(self):
+		"""Extends the capacity of the array."""
 		self.capacity *= self.expansion_rate
-		new_array = np.empty((self.capacity,))
+		new_array = np.empty((self.capacity,), dtype=self.dtype)
 		new_array[:self.size] = self.postings
 		self.postings = new_array
 
 	def finalize(self):
+		"""
+		Reduces the length of the underlying array to the current size of
+		the postings list, removing reference to the larger array.
+		"""
 		self.postings = self.postings[:self.size]
 		self.capacity = self.size
 
-	def compress(self, num_array):
+	@staticmethod
+	def compress(num_array):
+		"""Converts an array """
 		for i in range(len(num_array)):
 			if not i:
-				yield self.first
+				yield num_array[i]
 			else:
-				yield num_array[i] - self.first
+				yield num_array[i] - num_array[i - 1]
 
-	def decompress(self, num_array):
+	@staticmethod
+	def decompress(num_array):
 		for i in range(len(num_array)):
 			if not i:
-				yield self.first
+				yield num_array[i]
 			else:
-				yield int(num_array[i] + self.first)
+				yield num_array[i] + num_array[i - 1]
+
+	def update(self, postings):
+		for posting in postings:
+			self.add(posting)
 
 	def __str__(self):
 		return str(list(self.decompress(self.postings[:self.size])))

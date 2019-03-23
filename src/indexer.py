@@ -1,6 +1,7 @@
 import heapq
 import numpy as np
 from typing import *
+from postings_lists import NumericPostingsList, CustomPostingsList
 
 
 class InvertedIndex(dict):
@@ -31,7 +32,7 @@ class InvertedIndex(dict):
 		super().__init__()
 		if keep_db: self.database = database
 		if keep_ids: self.ids = ids
-		self.PostingsList = NumericPostingsList if numeric_ids else PostingsList
+		self.PostingsList = NumericPostingsList if numeric_ids else CustomPostingsList
 		self.__indexing = False
 		self.__current_doc = None
 		self.index(database, ids=ids, exclude=exclude)
@@ -42,7 +43,7 @@ class InvertedIndex(dict):
 		a PostingNode and sets the entry to equal that value.
 
 		:param str item: The token to be added to the dictionary
-		:return: posting
+		:return: postings list
 		"""
 		if self.__indexing:
 			self[item] = self.PostingsList([self.__current_doc])
@@ -52,10 +53,14 @@ class InvertedIndex(dict):
 
 	def _index_tokens(self, doc_body: list, doc_id: int, exclude: set) -> None:
 		"""
-		:param list-like doc_body: a list of tokens from tweet
-		:param int doc_id
-		:param list-like exclude: a list of
-		:returns: None
+		Walks through a give document and appends each element to the
+		corresponding postings list, creating a new postings list for each
+		element that is not already in the index and skipping all elements
+		in `exclude`.
+
+		:param list-like doc_body: a list of elements to be added to the index
+		:param int doc_id: the unique identifier of the given document
+		:param set exclude: a list of elements not to be added the index
 		"""
 		for token in doc_body:
 			# creates entry or assigns posting_node to existing one
@@ -75,9 +80,28 @@ class InvertedIndex(dict):
 		"""
 		return heapq.nlargest(n, self, key=lambda x: self[x])
 
-	def index(self, database, ids=None, exclude=(), show_progress=0) -> None:
+	def index(self, database: list, ids: list = None, exclude: list = (),
+	          show_progress: int = 0) -> None:
+		"""
+		Indexes a database. The `database` and `ids` parameters must be iterable.
+		Starts by checking whether the provided IDs are unique and compaitible with
+		any existing IDs. For every element in each document, tries to retrieve the
+		postings list for that element/key in the dictionary. If no such element
+		exists, creates a postings list and adds the current document ID to that
+		list.
+
+		If IDs are numeric, it iterates over all postings and calls their `finalize`
+		method.
+
+		:param list-like database: a collection of documents
+		:param list-like ids: a collection of identifiers, default None
+		:param list-like exclude: a list of elements that are not to be indexed,
+								  default empty tuple ()
+		:param int show_progress: print a progress update every n elements; if 0
+								  or below, do not print updates, default 0
+		"""
 		if ids is None:
-			if self.PostingsList is PostingsList:
+			if self.PostingsList is CustomPostingsList:
 				raise ValueError('Index is not numeric and no IDs are provided.')
 
 			ids = range(len(self), len(self) + len(database))
@@ -89,7 +113,7 @@ class InvertedIndex(dict):
 
 		current_index = 0
 		for doc, doc_id in zip(database, ids):
-			if show_progress and not current_index % show_progress:
+			if show_progress > 0 and not current_index % show_progress:
 				print(f'Current index: {doc_id}, {current_index/len(database)}%')
 
 			self._index_tokens(doc, doc_id, exclude)
@@ -99,17 +123,14 @@ class InvertedIndex(dict):
 			for postings_list in self.values():
 				postings_list.finalize()
 
-		try:
-			del self.__current_doc
-		except NameError:
-			pass
-
 		self.__indexing = False
 
-	def token_count(self):
+	def token_count(self) -> int:
+		"""Returns the total number of elements (values) in the index."""
 		return sum(map(len, self.values()))
 
-	def collect_ids(self):
+	def collect_ids(self) -> list:
+		"""Returns all the identifiers (keys) in the index."""
 		try:
 			return self.ids
 		except AttributeError:
@@ -134,7 +155,7 @@ class InvertedIndex(dict):
 		else:
 			return list(set(self.query(term1)) & set(self.query(term2)))
 
-	def _check_ids(self, ids, database, ensure_numeric):
+	def _check_ids(self, ids: list, database: list, ensure_numeric: bool) -> np.array:
 		"""
 		Ensures that a provided list of IDs 1) is the same shape as its accompanying
 		dataset, 2) contains no duplicate elements, and 3) contingent upon the boolean
@@ -153,6 +174,7 @@ class InvertedIndex(dict):
 		if len(ids) != len(set(ids)) or len(ids & self.collect_ids()):
 			raise IndexError('`ids` does not consist of unique elements.')
 
+		# Converts all IDs to NumPy 32-bit unsigned integers
 		if ensure_numeric:
 			numeric_ids = np.empty((len(ids),), dtype=np.uint32)
 			for i in range(len(ids)):
