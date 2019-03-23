@@ -65,16 +65,17 @@ class NumericPostingsList(CustomPostingsList):
 			   when its capacity is met.
 		"""
 		super().__init__(postings)
-		self.size = len(postings)
-		self.highest = postings[-1] if self.size else None
+		self.highest = None
 		assert issubclass(dtype, np.unsignedinteger)
 		self.dtype = dtype
 		self.expansion_rate = expansion_rate
 
-		if self.size > capacity:
+		if len(postings) > capacity:
+			self.highest = postings[-1]
 			self.postings = np.array(list(self.compress(postings)), dtype=dtype)
-			self.capacity = self.size
+			self.capacity = self.size = len(postings)
 		else:
+			self.size = 0
 			self.capacity = capacity
 			self.postings = np.empty((capacity,), dtype=dtype)
 			self.update(postings)
@@ -93,7 +94,7 @@ class NumericPostingsList(CustomPostingsList):
 
 	def _extend_array(self):
 		"""Extends the capacity of the array."""
-		self.capacity *= self.expansion_rate
+		self.capacity = int(self.capacity * self.expansion_rate)
 		new_array = np.empty((self.capacity,), dtype=self.dtype)
 		new_array[:self.size] = self.postings
 		self.postings = new_array
